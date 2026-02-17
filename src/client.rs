@@ -43,8 +43,11 @@ pub struct TlsConfig<'a, const RX_SIZE: usize = 4096, const TX_SIZE: usize = 409
     /// Minimum TLS version for the connection
     version: crate::TlsVersion,
 
-    /// Client certificates. See [mbedtls_rs::Certificates]
+    /// Root certificates to trust. See [mbedtls_rs::Certificates]
     certificates: crate::Certificate<'a>,
+
+    /// Client certificate and private key for mutual TLS. See [mbedtls_rs::Certificates]
+    client_credentials: Option<crate::Credentials<'a>>,
 
     /// A reference to instance of the MbedTLS library.
     tls_reference: mbedtls_rs::TlsReference<'a>,
@@ -122,11 +125,13 @@ impl<'a, const RX_SIZE: usize, const TX_SIZE: usize> TlsConfig<'a, RX_SIZE, TX_S
     pub fn new(
         version: crate::TlsVersion,
         certificates: crate::Certificate<'a>,
+        client_credentials: Option<crate::Credentials<'a>>,
         tls_reference: crate::TlsReference<'a>,
     ) -> Self {
         Self {
             version,
             certificates,
+            client_credentials,
             tls_reference,
         }
     }
@@ -186,13 +191,13 @@ where
                     conn,
                     &mbedtls_rs::SessionConfig::Client(mbedtls_rs::ClientSessionConfig {
                         ca_chain: Some(tls.certificates.clone()),
-                        creds: None,
+                        creds: tls.client_credentials.clone(),
                         server_name: None, // don't set it here because it would reference a local variable
                         auth_mode: mbedtls_rs::AuthMode::Required,
                         min_version: tls.version,
                     }),
                 )?;
-                session.set_server_name(unsafe { core::ffi::CStr::from_bytes_with_nul_unchecked(&servername) })?;
+                session.set_server_name(core::ffi::CStr::from_bytes_with_nul(&servername).unwrap())?;
 
                 session.connect().await?;
                 Ok(HttpConnection::Tls(session))
