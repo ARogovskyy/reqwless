@@ -48,43 +48,47 @@ If you are missing a feature or would like an improvement, please raise an issue
 :warning: The released version of `reqwless` does not support `mbedtls-rs`. The reason for this is that `mbedtls-rs` is not yet published to crates.io. One should specify `reqwless` as a git dependency to use `mbedtls-rs`.
 
 ### mbedtls-rs
-**Can only be used on esp32 boards**
-`mbedtls-rs` supports TLS 1.2 and 1.3. It uses espressif's Rust wrapper over mbedtls, alongside optimizations such as hardware acceleration.
+`mbedtls-rs` supports TLS 1.2 and 1.3. It uses [Espressif's Rust wrapper](https://github.com/esp-rs/mbedtls-rs) over [mbedtls](https://www.trustedfirmware.org/projects/mbed-tls/) and allows for optimizations such as hardware acceleration.
 
 Cargo.toml: 
 
 ```toml
 reqwless = { version = "0.14.0", default-features = false, features = ["mbedtls-rs", "log"] }
-mbedtls-rs = { git = "https://github.com/esp-rs/mbedtls-rs.git",  features = ["esp32s3"] }
+mbedtls-rs = { git = "https://github.com/esp-rs/mbedtls-rs.git" }
 ```
 
 
 #### Example
 ```rust,ignore
-/// ... [initialization code. See esp-wifi]
+/// ... [initialization code. See esp-radio and mbedtls-rs examples]
 let state = TcpClientState::<1, 4096, 4096>::new();
 let mut tcp_client = TcpClient::new(stack, &state);
-let dns_socket = DnsSocket::new(&stack);
-let mut rsa = Rsa::new(peripherals.RSA);
-let config = TlsConfig::new(
-    reqwless::TlsVersion::Tls1_3,
-    reqwless::Certificates {
-        ca_chain: reqwless::X509::pem(CERT.as_bytes()).ok(),
-        ..Default::default()
-    },
-    Some(&mut rsa), // Will use hardware acceleration
+let dns_socket = DnsSocket::new(stack);
+
+let _trng_source = TrngSource::new(peripherals.RNG, peripherals.ADC1);
+let trng = Trng::try_new().unwrap();
+let mbedtls_lib_instance = mbedtls_rs::Tls::new(&mut trng).unwrap();
+// For debug messages:
+// mbedtls_lib_instance.set_debug(1);
+
+let tls_config = TlsConfig::new(
+    reqwless::TlsVersion::Tls1_2,
+    reqwless::Certificate::new(reqwless::X509::PEM(CERT)).unwrap(),
+    None, // optionally, add client certificate for mTLS
+    mbedtls_lib_instance.reference(),
 );
-let mut client = HttpClient::new_with_tls(&tcp_client, &dns_socket, config);
+
+let header_buf = [0; 1024];
+
+let client = HttpClient::new_with_tls(&tcp_client, &dns_socket, tls_config);
 
 let mut request = client
-    .request(reqwless::request::Method::GET, "https://www.google.com")
+    .request(reqwless::request::Method::GET, "https://example.com")
     .await
     .unwrap()
     .content_type(reqwless::headers::ContentType::TextPlain)
-    .headers(&[("Host", "google.com")])
-    .send(&mut buffer)
-    .await
-    .unwrap();
+    .headers(&[("Host", "example.com")]);
+let response = request.send(&mut header_buf).await.unwrap();
 ```
 
 ### embedded-tls
