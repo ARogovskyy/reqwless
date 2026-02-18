@@ -1,13 +1,13 @@
 #[cfg(feature = "mbedtls-rs")]
 extern crate alloc;
 
-use crate::Error;
 /// Client using embedded-nal-async traits to establish connections and perform HTTP requests.
 ///
 use crate::body_writer::{BufferingChunkedBodyWriter, ChunkedBodyWriter, FixedBodyWriter};
 use crate::headers::ContentType;
 use crate::request::*;
 use crate::response::*;
+use crate::{Close, Error};
 use buffered_io::asynch::BufferedWrite;
 use core::net::SocketAddr;
 use embedded_io::Error as _;
@@ -479,7 +479,8 @@ where
 
 /// A HTTP request handle
 ///
-/// The underlying connection is closed when drop'ed.
+/// For plain connections, the underlying connection is closed when drop'ed.
+/// For TLS connections, you should call [`Self::close`].
 pub struct HttpRequestHandle<'conn, C, B>
 where
     C: Read + Write,
@@ -521,6 +522,17 @@ where
         self.conn.write_request(&request).await?;
         self.conn.flush().await?;
         Response::read(&mut self.conn, request.method, rx_buf).await
+    }
+}
+
+impl<'conn, C, B> Close for HttpRequestHandle<'conn, C, B>
+where
+    C: Read + Write,
+    B: RequestBody,
+{
+    /// Only necessary for TLS connections. Closes the underlying TLS connection, if TLS was used.
+    async fn close(self) -> Result<(), Error> {
+        self.conn.close().await
     }
 }
 
@@ -575,7 +587,8 @@ where
 
 /// A HTTP resource describing a scoped endpoint
 ///
-/// The underlying connection is closed when drop'ed.
+/// For plain connections, the underlying connection is closed when drop'ed.
+/// For TLS connections, you should call [`Self::close`].
 pub struct HttpResource<'res, C>
 where
     C: Read + Write,
@@ -656,6 +669,16 @@ where
         self.conn.write_request(&request).await?;
         self.conn.flush().await?;
         Response::read(&mut self.conn, request.method, rx_buf).await
+    }
+}
+
+impl<'conn, C> Close for HttpResource<'conn, C>
+where
+    C: Read + Write,
+{
+    /// Only necessary for TLS connections. Closes the underlying TLS connection, if TLS was used.
+    async fn close(self) -> Result<(), Error> {
+        self.conn.close().await
     }
 }
 

@@ -89,6 +89,9 @@ let mut request = client
     .content_type(reqwless::headers::ContentType::TextPlain)
     .headers(&[("Host", "example.com")]);
 let response = request.send(&mut header_buf).await.unwrap();
+// read the body etc.
+// Calling close() closes the underlying TLS connection
+request.close().await.unwrap();
 ```
 
 ### embedded-tls

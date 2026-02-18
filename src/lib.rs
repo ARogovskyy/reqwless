@@ -148,3 +148,24 @@ where
         }
     }
 }
+
+// Trait for types that can close their underlying connection.
+pub trait Close {
+    async fn close(self) -> Result<(), Error>;
+}
+
+impl<C> Close for crate::client::HttpConnection<'_, C>
+where
+    C: embedded_io_async::Read + embedded_io_async::Write,
+{
+    async fn close(self) -> Result<(), Error> {
+        match self {
+            #[cfg(feature = "embedded-tls")]
+            crate::client::HttpConnection::Tls(session) => session.close().await.map(|_| ()).map_err(|(_, e)| e)?,
+            #[cfg(feature = "mbedtls-rs")]
+            crate::client::HttpConnection::Tls(mut session) => session.close().await?,
+            _ => (),
+        };
+        Ok(())
+    }
+}
